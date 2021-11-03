@@ -1,53 +1,73 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/google/uuid"
+	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
 )
 
-func uploadTest(sess *session.Session, bucket string, fileName string) error {
-	id := uuid.New()
-	key := fmt.Sprintf("foo/%s/%s", id, id)
-
-	file, err := os.Open("./foo")
-	if err != nil {
-		return fmt.Errorf("error: %v", err)
-	}
-	defer file.Close()
-
-	uploader := s3manager.NewUploader(sess)
-	output, err := uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   file,
-	})
-	if err != nil {
-		return fmt.Errorf("error: %v", err)
+func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
+	conf := loki_aws.S3Config{
+		BucketNames:     bucketName,
+		Region:          region,
+		AccessKeyID:     accessKey,
+		SecretAccessKey: secret,
+		Insecure:        true,
 	}
 
-	fmt.Printf("Upload completed: \nFile: %s \nBucket: %s \nOutput: %v", fileName, bucket, output)
+	client, err := loki_aws.NewS3ObjectClient(conf)
+	if err != nil {
+		return nil, fmt.Errorf("error: %v", err)
+	}
+
+	fmt.Printf("S3 Client Created: %+v", client)
+	return client, nil
+}
+
+func testPutAndDeleteBatchOfObjects() error {
+	// bucketName, region, accessKey, secret
+	client, err := createS3ObjectClient(os.Args[1], os.Args[2], os.Args[3], os.Args[4])
+	if err != nil {
+		return err
+	}
+
+	// Generate a slice of random object keys
+	var keys []string
+	for i := 0; i < 5; i++ {
+		id := uuid.New()
+		keys = append(keys, fmt.Sprintf("foo/%s/%s", id, id))
+	}
+
+	for _, key := range keys {
+		// Dummy data
+		err = client.PutObject(context.Background(), key, bytes.NewReader([]byte("hi")))
+		if err != nil {
+			return err
+		}
+	}
+
+	time.Sleep(15 * time.Second)
+
+	for _, key := range keys {
+		err = client.DeleteObject(context.Background(), key)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func main() {
-	bucketName := "dev-us-east-0-loki-rate-limit-test"
-
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String("us-east-2"),
-	})
+	// Basic test using Loki object client to put dummy data and delete it after a brief pause
+	err := testPutAndDeleteBatchOfObjects()
 	if err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
-	}
-
-	err = uploadTest(sess, bucketName, "./foo")
-	if err != nil {
-		fmt.Printf("%v", err)
+		fmt.Printf("%+v", err)
 		os.Exit(1)
 	}
 }
