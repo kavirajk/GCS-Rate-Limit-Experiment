@@ -10,8 +10,8 @@ RUN go mod download
 
 COPY *.go ./
 
-RUN go build -o /s3-rate-limit
+RUN go build
 
 EXPOSE 8080
 
-CMD [ "/s3-rate-limit" ]
+CMD [ "./s3-rate-limit-experiment" ]
