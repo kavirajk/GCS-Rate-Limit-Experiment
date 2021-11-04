@@ -3,13 +3,24 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
+var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
+var region = flag.String("region", "", "s3 region.")
+var accessKey = flag.String("access-key", "", "s3 access key")
+var secretKey = flag.String("secret-key", "", "s3 secret key")
 
 func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
 	conf := loki_aws.S3Config{
@@ -29,45 +40,53 @@ func createS3ObjectClient(bucketName string, region string, accessKey string, se
 	return client, nil
 }
 
-func testPutAndDeleteBatchOfObjects() error {
-	// bucketName, region, accessKey, secret
-	client, err := createS3ObjectClient(os.Args[1], os.Args[2], os.Args[3], os.Args[4])
-	if err != nil {
-		return err
-	}
-
-	// Generate a slice of random object keys
-	var keys []string
-	for i := 0; i < 5; i++ {
-		id := uuid.New()
-		keys = append(keys, fmt.Sprintf("foo/%s/%s", id, id))
-	}
-
+func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 	for _, key := range keys {
-		// Dummy data
-		err = client.PutObject(context.Background(), key, bytes.NewReader([]byte("hi")))
-		if err != nil {
+		if err := client.PutObject(context.Background(), key, bytes.NewReader([]byte("hi"))); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	time.Sleep(15 * time.Second)
-
+func deleteObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 	for _, key := range keys {
-		err = client.DeleteObject(context.Background(), key)
-		if err != nil {
+		if err := client.DeleteObject(context.Background(), key); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
 func main() {
-	// Basic test using Loki object client to put dummy data and delete it after a brief pause
-	err := testPutAndDeleteBatchOfObjects()
-	if err != nil {
-		fmt.Printf("%+v", err)
-		os.Exit(1)
-	}
+	flag.Parse()
+
+	go func() {
+		// bucketName, region, accessKey, secret
+		client, err := createS3ObjectClient(*bucketName, *region, *accessKey, *secretKey)
+		if err != nil {
+			fmt.Printf("%+v", err)
+			os.Exit(1)
+		}
+
+		// Generate a slice of random object keys
+		var keys []string
+		for i := 0; i < 5; i++ {
+			id := uuid.New()
+			keys = append(keys, fmt.Sprintf("foo/%s/%s", id, id))
+		}
+		// Basic test using Loki object client to put dummy data and delete it after a brief pause
+		if err := putObjectBatch(client, keys); err != nil {
+			fmt.Printf("%+v", err)
+			os.Exit(1)
+		}
+		time.Sleep(15 * time.Second)
+		if err := deleteObjectBatch(client, keys); err != nil {
+			fmt.Printf("%+v", err)
+			os.Exit(1)
+		}
+	}()
+
+	http.Handle("/metrics", promhttp.Handler())
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
