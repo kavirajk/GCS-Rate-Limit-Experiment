@@ -18,8 +18,8 @@ import (
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
 var region = flag.String("region", "", "s3 region.")
-var accessKey = flag.String("access-key", "", "s3 access key")
-var secretKey = flag.String("secret-key", "", "s3 secret key")
+var accessKey = os.Getenv("S3_ACCESS_KEY")
+var secretKey = os.Getenv("S3_SECRET_KEY")
 var timeToRun = flag.Uint64("time-to-run", 5, "The amount of time to run the experiment in seconds.")
 var tickInterval = flag.Uint64("tick-interval", 200, "Interval between requests in milliseconds.")
 
@@ -70,7 +70,7 @@ func main() {
 			case <-done:
 				return
 			case <-ticker.C:
-				client, err := createS3ObjectClient(*bucketName, *region, *accessKey, *secretKey)
+				client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
 				if err != nil {
 					fmt.Printf("%+v", err)
 					os.Exit(1)
@@ -95,7 +95,7 @@ func main() {
 		done <- true
 
 		// Clean up the objects we wrote when we are done
-		client, err := createS3ObjectClient(*bucketName, *region, *accessKey, *secretKey)
+		client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
 		if err != nil {
 			fmt.Printf("%+v", err)
 			os.Exit(1)
