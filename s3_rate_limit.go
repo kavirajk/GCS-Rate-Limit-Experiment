@@ -8,7 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
 	"github.com/google/uuid"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
@@ -20,8 +21,6 @@ var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
 var region = flag.String("region", "", "s3 region.")
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
-var timeToRun = flag.Uint64("time-to-run", 5, "The amount of time to run the experiment in seconds.")
-var tickInterval = flag.Uint64("tick-interval", 200, "Interval between requests in milliseconds.")
 
 func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
 	conf := loki_aws.S3Config{
@@ -48,64 +47,48 @@ func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 	return nil
 }
 
-func deleteObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
-	for _, key := range keys {
-		if err := client.DeleteObject(context.Background(), key); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// func deleteObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
+// 	for _, key := range keys {
+// 		if err := client.DeleteObject(context.Background(), key); err != nil {
+// 			return err
+// 		}
+// 	}
+// 	return nil
+// }
 
 func main() {
 	flag.Parse()
 
-	var keys []string
-	ticker := time.NewTicker(time.Duration(*tickInterval) * time.Millisecond)
-	done := make(chan bool)
+	client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
+	if err != nil {
+		fmt.Printf("%+v", err)
+		os.Exit(1)
+	}
 
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
-				if err != nil {
-					fmt.Printf("%+v", err)
-					os.Exit(1)
-				}
+	term := make(chan os.Signal)
+	signal.Notify(term, syscall.SIGINT, syscall.SIGTERM)
 
-				id := uuid.New()
-				key := fmt.Sprintf("foo/%s/%s", id, id)
-				keys = append(keys, key)
+	for i := 0; i < 100; i++ {
+		go func() {
+			for {
+				select {
+				case <-term:
+					return
+				default:
+					id := uuid.New()
+					key := fmt.Sprintf("foo/%s/%s", id, id)
 
-				if err := putObjectBatch(client, []string{key}); err != nil {
-					fmt.Printf("%+v", err)
-					os.Exit(1)
+					if err := putObjectBatch(client, []string{key}); err != nil {
+						fmt.Printf("%+v", err)
+					}
 				}
 			}
-		}
-	}()
+		}()
+	}
 
 	go func() {
-		// Run the experiment for timeToRun
-		time.Sleep(time.Duration(*timeToRun) * time.Second)
-		ticker.Stop()
-		done <- true
-
-		// Clean up the objects we wrote when we are done
-		client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
-		if err != nil {
-			fmt.Printf("%+v", err)
-			os.Exit(1)
-		}
-		if err := deleteObjectBatch(client, keys); err != nil {
-			fmt.Printf("%+v", err)
-			os.Exit(1)
-		}
+		http.Handle("/metrics", promhttp.Handler())
+		log.Fatal(http.ListenAndServe(*addr, nil))
 	}()
-
-	http.Handle("/metrics", promhttp.Handler())
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	<-term
 }
