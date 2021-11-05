@@ -70,16 +70,23 @@ func main() {
 
 	for i := 0; i < 100; i++ {
 		go func() {
+			prefixFactor := 1
 			for {
 				select {
 				case <-term:
 					return
 				default:
 					id := uuid.New()
-					key := fmt.Sprintf("foo/%s/%s", id, id)
+					key := fmt.Sprintf("foo/%d/%s/%s", prefixFactor, id, id)
 
 					if err := putObjectBatch(client, []string{key}); err != nil {
 						fmt.Printf("%+v", err)
+					}
+
+					if prefixFactor == 1 {
+						prefixFactor = prefixFactor + 1
+					} else if prefixFactor == 2 {
+						prefixFactor = prefixFactor - 1
 					}
 				}
 			}

@@ -10,8 +10,9 @@ RUN go mod download
 
 COPY *.go ./
 
+ARG GOARCH="amd64"
 RUN go build -o s3-rate-limit-experiment
 
 EXPOSE 8080
 
-CMD ["/app/s3-rate-limit-experiment"]
+ENTRYPOINT ["/app/s3-rate-limit-experiment"]
