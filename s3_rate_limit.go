@@ -73,6 +73,14 @@ func main() {
 	for i := 0; i < 100; i++ {
 		go func() {
 			prefixFactor := 1
+
+			// Retry with exponential backoff per AWS documentation
+			backoffConfig := backoff.Config{
+				MinBackoff: 100 * time.Millisecond,
+				MaxBackoff: 3 * time.Second,
+				MaxRetries: 10,
+			}
+
 			for {
 				select {
 				case <-term:
@@ -81,19 +89,15 @@ func main() {
 					id := uuid.New()
 					key := fmt.Sprintf("bar/%d/%s/%s", prefixFactor, id, id)
 
-					// Retry with exponential backoff per AWS documentation
-					backoffConfig := backoff.Config{
-						MinBackoff: 100 * time.Millisecond,
-						MaxBackoff: 3 * time.Second,
-						MaxRetries: 10,
-					}
-
 					retries := backoff.New(context.Background(), backoffConfig)
 					for retries.Ongoing() {
-						if err := putObjectBatch(client, []string{key}); err != nil {
+						err := putObjectBatch(client, []string{key})
+						if err != nil {
 							fmt.Printf("%+v", err)
+							retries.Wait()
+						} else if err == nil {
+							break
 						}
-						retries.Wait()
 					}
 
 					if prefixFactor == 1 {
