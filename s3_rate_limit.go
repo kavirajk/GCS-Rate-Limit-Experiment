@@ -77,7 +77,7 @@ func main() {
 			// Retry with exponential backoff per AWS documentation
 			backoffConfig := backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
-				MaxBackoff: 3 * time.Second,
+				MaxBackoff: 5 * time.Second,
 				MaxRetries: 10,
 			}
 
