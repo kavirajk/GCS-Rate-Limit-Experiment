@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/grafana/dskit/backoff"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -77,10 +79,21 @@ func main() {
 					return
 				default:
 					id := uuid.New()
-					key := fmt.Sprintf("foo/%d/%s/%s", prefixFactor, id, id)
+					key := fmt.Sprintf("bar/%d/%s/%s", prefixFactor, id, id)
 
-					if err := putObjectBatch(client, []string{key}); err != nil {
-						fmt.Printf("%+v", err)
+					// Retry with exponential backoff per AWS documentation
+					backoffConfig := backoff.Config{
+						MinBackoff: 100 * time.Millisecond,
+						MaxBackoff: 3 * time.Second,
+						MaxRetries: 10,
+					}
+
+					retries := backoff.New(context.Background(), backoffConfig)
+					for retries.Ongoing() {
+						if err := putObjectBatch(client, []string{key}); err != nil {
+							fmt.Printf("%+v", err)
+						}
+						retries.Wait()
 					}
 
 					if prefixFactor == 1 {
