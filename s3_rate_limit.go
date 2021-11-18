@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 )
 
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
@@ -58,6 +59,26 @@ func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 // 	return nil
 // }
 
+func chunkKey(withJitter bool) (string, error) {
+	from := uint64(time.Now().UTC().UnixMilli())
+	period := 5 * time.Minute
+	uuid := uuid.New()
+
+	fingerPrint, err := model.FingerprintFromString(uuid.String())
+	if err != nil {
+		return "", err
+	}
+	shard := uint64(fingerPrint) % 2
+
+	if withJitter {
+		jitter := uint64(fingerPrint) % uint64(period)
+		prefix := (from + jitter) % uint64(period)
+		return fmt.Sprintf("baz/%x/%x/%x/%x:%s", prefix, shard, fingerPrint, from, uuid), nil
+	} else {
+		return fmt.Sprintf("baz/%x/%x/%x/%x:%s", uint64(period), shard, fingerPrint, from, uuid), nil
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -72,8 +93,6 @@ func main() {
 
 	for i := 0; i < 100; i++ {
 		go func() {
-			prefixFactor := 1
-
 			// Retry with exponential backoff per AWS documentation
 			backoffConfig := backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
@@ -86,8 +105,12 @@ func main() {
 				case <-term:
 					return
 				default:
-					id := uuid.New()
-					key := fmt.Sprintf("bar/%d/%s/%s", prefixFactor, id, id)
+					// Without jitter for now
+					key, err := chunkKey(false)
+					if err != nil {
+						fmt.Printf("%+v", err)
+						os.Exit(1)
+					}
 
 					retries := backoff.New(context.Background(), backoffConfig)
 					for retries.Ongoing() {
@@ -98,12 +121,6 @@ func main() {
 						} else if err == nil {
 							break
 						}
-					}
-
-					if prefixFactor == 1 {
-						prefixFactor = prefixFactor + 1
-					} else if prefixFactor == 2 {
-						prefixFactor = prefixFactor - 1
 					}
 				}
 			}
