@@ -23,6 +23,7 @@ var addr = flag.String("listen-address", ":8080", "The address to listen on for 
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
 var period = flag.Int64("period", 60, "Time period in minutes used for chunk object sharding.")
 var region = flag.String("region", "", "s3 region.")
+var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
 
@@ -69,7 +70,7 @@ func chunkKey(withJitter bool, period time.Duration, shard int) (string, error) 
 		prefix := (from + jitter) % uint64(period)
 		return fmt.Sprintf("baz/%x/%x/%s", prefix, shard, uuid), nil
 	} else {
-		return fmt.Sprintf("baz/%x/%x/%s", uint64(period), shard, uuid), nil
+		return fmt.Sprintf("baz/%x/%x/%s", from%uint64(period), shard, uuid), nil
 	}
 }
 
@@ -102,7 +103,7 @@ func main() {
 					return
 				default:
 					// Without jitter for now
-					key, err := chunkKey(false, time.Duration((*period))*time.Minute, prefixFactor)
+					key, err := chunkKey(*withJitter, time.Duration((*period))*time.Minute, prefixFactor)
 					if err != nil {
 						fmt.Printf("%+v", err)
 						os.Exit(1)
