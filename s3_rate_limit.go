@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -16,7 +17,6 @@ import (
 	"github.com/grafana/dskit/backoff"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/model"
 )
 
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
@@ -60,22 +60,16 @@ func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 // 	return nil
 // }
 
-func chunkKey(withJitter bool, period time.Duration) (string, error) {
+func chunkKey(withJitter bool, period time.Duration, shard int) (string, error) {
 	from := uint64(time.Now().UTC().UnixMilli())
 	uuid := uuid.New()
 
-	fingerPrint, err := model.FingerprintFromString(uuid.String())
-	if err != nil {
-		return "", err
-	}
-	shard := uint64(fingerPrint) % 2
-
 	if withJitter {
-		jitter := uint64(fingerPrint) % uint64(period)
+		jitter := binary.BigEndian.Uint64(uuid[:]) % uint64(period)
 		prefix := (from + jitter) % uint64(period)
-		return fmt.Sprintf("baz/%x/%x/%x/%x:%s", prefix, shard, fingerPrint, from, uuid), nil
+		return fmt.Sprintf("baz/%x/%x/%s", prefix, shard, uuid), nil
 	} else {
-		return fmt.Sprintf("baz/%x/%x/%x/%x:%s", uint64(period), shard, fingerPrint, from, uuid), nil
+		return fmt.Sprintf("baz/%x/%x/%s", uint64(period), shard, uuid), nil
 	}
 }
 
@@ -100,13 +94,15 @@ func main() {
 				MaxRetries: 10,
 			}
 
+			prefixFactor := 1
+
 			for {
 				select {
 				case <-term:
 					return
 				default:
 					// Without jitter for now
-					key, err := chunkKey(false, time.Duration((*period))*time.Minute)
+					key, err := chunkKey(false, time.Duration((*period))*time.Minute, prefixFactor)
 					if err != nil {
 						fmt.Printf("%+v", err)
 						os.Exit(1)
@@ -121,6 +117,12 @@ func main() {
 						} else if err == nil {
 							break
 						}
+					}
+
+					if prefixFactor == 1 {
+						prefixFactor = prefixFactor + 1
+					} else if prefixFactor == 2 {
+						prefixFactor = prefixFactor - 1
 					}
 				}
 			}
