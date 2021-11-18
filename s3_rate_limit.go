@@ -21,6 +21,7 @@ import (
 
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
+var period = flag.Int64("period", 60, "Time period in minutes used for chunk object sharding.")
 var region = flag.String("region", "", "s3 region.")
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
@@ -59,9 +60,8 @@ func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 // 	return nil
 // }
 
-func chunkKey(withJitter bool) (string, error) {
+func chunkKey(withJitter bool, period time.Duration) (string, error) {
 	from := uint64(time.Now().UTC().UnixMilli())
-	period := 5 * time.Minute
 	uuid := uuid.New()
 
 	fingerPrint, err := model.FingerprintFromString(uuid.String())
@@ -106,7 +106,7 @@ func main() {
 					return
 				default:
 					// Without jitter for now
-					key, err := chunkKey(false)
+					key, err := chunkKey(false, time.Duration((*period))*time.Minute)
 					if err != nil {
 						fmt.Printf("%+v", err)
 						os.Exit(1)
