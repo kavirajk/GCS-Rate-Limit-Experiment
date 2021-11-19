@@ -70,16 +70,12 @@ func chunkKey(withJitter bool, period time.Duration, shard int) (string, error) 
 	uuid := uuid.New()
 
 	if !withJitter {
-		return fmt.Sprintf("bat/%x/%x/%s", from-(uint64(period)-remainder), shard, uuid), nil
-	}
-
-	var prefix uint64
-	if float64(chance) <= percent { // put this chunk in the next time period prefix
-		prefix = from + remainder
+		return fmt.Sprintf("bat/%x/%x/%s", (from - remainder), shard, uuid), nil
+	} else if float64(chance) <= percent { // put this chunk in the next time period prefix
+		return fmt.Sprintf("bat/%x/%x/%s", (from + (uint64(period) - remainder)), shard, uuid), nil
 	} else {
-		return fmt.Sprintf("bat/%x/%x/%s", from%uint64(period), shard, uuid), nil
+		return fmt.Sprintf("bat/%x/%x/%s", (from - remainder), shard, uuid), nil
 	}
-	return fmt.Sprintf("bat/%x/%x/%s", prefix, shard, uuid), nil
 }
 
 func main() {
