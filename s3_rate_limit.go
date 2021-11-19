@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -63,16 +62,15 @@ func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
 // }
 
 func chunkKey(withJitter bool, period time.Duration, shard int) (string, error) {
-	// TODO: I only tested this with `time.Now().Unix()`, double check it works properly with UnixMilli or UnixNano.
-	// Probably need to convert period to the same units.
-	from := uint64(time.Now().UTC().UnixMilli())
+	from := uint64(time.Now().UTC().UnixNano())
 	// simiulate a good distribution of active stream fingerprints
 	chance := rand.Intn(100) + 1
-	remainder := from % int64(period)
+	remainder := from % uint64(period)
 	percent := (float64(remainder) / float64(period)) * 100
+	uuid := uuid.New()
 
 	if !withJitter {
-		return fmt.Sprintf("baz/%x/%x/%s", from-(int64(period)-remainder), shard, uuid), nil
+		return fmt.Sprintf("baz/%x/%x/%s", from-(uint64(period)-remainder), shard, uuid), nil
 	}
 
 	var prefix uint64
