@@ -23,6 +23,7 @@ import (
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
 var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding.")
+var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period.")
 var region = flag.String("region", "", "s3 region.")
 var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
 var shardFactor = flag.Int("shard-factor", 1, "shard factor to use")
@@ -102,7 +103,7 @@ func main() {
 			// Retry with exponential backoff per AWS documentation
 			backoffConfig := backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
-				MaxBackoff: 10 * time.Second,
+				MaxBackoff: *maxBackoff,
 				MaxRetries: 10,
 			}
 
