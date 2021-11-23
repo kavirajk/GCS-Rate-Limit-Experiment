@@ -81,7 +81,7 @@ func newKey() key {
 
 func putObject(client *loki_aws.S3ObjectClient, key key) error {
 	err := client.PutObject(context.Background(), key.String(), bytes.NewReader([]byte("hi")))
-	metric.WithLabelValues("false", fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
+	metric.WithLabelValues(fmt.Sprint(err == nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
 	return err
 }
 
