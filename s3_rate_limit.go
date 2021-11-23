@@ -81,7 +81,7 @@ func newKey() key {
 
 func putObject(client *loki_aws.S3ObjectClient, key key) error {
 	err := client.PutObject(context.Background(), key.String(), bytes.NewReader([]byte("hi")))
-	metric.WithLabelValues(fmt.Sprint(err == nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
+	metric.WithLabelValues(fmt.Sprint(err != nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
 	return err
 }
 
@@ -102,7 +102,7 @@ func main() {
 			// Retry with exponential backoff per AWS documentation
 			backoffConfig := backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
-				MaxBackoff: 5 * time.Second,
+				MaxBackoff: 10 * time.Second,
 				MaxRetries: 10,
 			}
 
