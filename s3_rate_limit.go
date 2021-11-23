@@ -57,7 +57,7 @@ type key struct {
 
 func (k key) String() string {
 	// <user>/<period>/<shard>/fprint
-	return fmt.Sprintf("user/%d-%d/%x", k.bucket, k.shard, k.fprint)
+	return fmt.Sprintf("user/%d/%d/%x", k.bucket, k.shard, k.fprint)
 
 }
 
