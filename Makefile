@@ -1,4 +1,4 @@
-IMAGE_PREFIX ?= owend
+IMAGE_PREFIX ?= "$(shell whoami)"
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 
 docker:
