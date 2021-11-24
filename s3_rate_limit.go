@@ -20,13 +20,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
-var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
-var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding.")
-var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period.")
-var region = flag.String("region", "", "s3 region.")
+var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests")
+var bucketName = flag.String("bucket", "", "s3 bucket to read/write to")
+var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period")
+var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding")
+var region = flag.String("region", "", "S3 region")
+var shardFactor = flag.Int("shard-factor", 1, "Shard factor to use")
 var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
-var shardFactor = flag.Int("shard-factor", 1, "shard factor to use")
+
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
 
@@ -35,22 +36,6 @@ var metric = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheu
 	Name:      "s3_requests_total",
 }, []string{"err", "bucket", "shard"})
 
-func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
-	conf := loki_aws.S3Config{
-		BucketNames:     bucketName,
-		Region:          region,
-		AccessKeyID:     accessKey,
-		SecretAccessKey: secret,
-		Insecure:        true,
-	}
-
-	client, err := loki_aws.NewS3ObjectClient(conf)
-	if err != nil {
-		return nil, fmt.Errorf("error: %v", err)
-	}
-	return client, nil
-}
-
 type key struct {
 	bucket, shard, fprint uint64
 }
@@ -58,7 +43,6 @@ type key struct {
 func (k key) String() string {
 	// <user>/<period>/<shard>/fprint
 	return fmt.Sprintf("user/%d/%d/%x", k.bucket, k.shard, k.fprint)
-
 }
 
 func newKey() key {
@@ -77,7 +61,22 @@ func newKey() key {
 		shard:  shard,
 		fprint: fprint,
 	}
+}
 
+func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
+	conf := loki_aws.S3Config{
+		BucketNames:     bucketName,
+		Region:          region,
+		AccessKeyID:     accessKey,
+		SecretAccessKey: secret,
+		Insecure:        true,
+	}
+
+	client, err := loki_aws.NewS3ObjectClient(conf)
+	if err != nil {
+		return nil, fmt.Errorf("error: %v", err)
+	}
+	return client, nil
 }
 
 func putObject(client *loki_aws.S3ObjectClient, key key) error {

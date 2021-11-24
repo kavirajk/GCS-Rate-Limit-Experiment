@@ -1,26 +1,38 @@
 # S3 Rate Limit Experiment
 
-Usage:
+Wrap [Loki's `S3ObjectClient`](https://github.com/grafana/loki/blob/main/pkg/storage/chunk/aws/s3_storage_client.go) and generate write load via `PutObject()` spam across 100 Goroutines per replica.
+
+Retry with configurable exponential backoff and jitter from [dskit](https://github.com/grafana/dskit/tree/main/backoff).
+
+## Usage
 
 ```shell
-Usage of ./s3_rate_limit:
-  -access-key string
-        s3 access key
+$ ./s3-rate-limit-experiment --help
+Usage of ./s3-rate-limit-experiment:
   -bucket string
         s3 bucket to read/write to.
   -listen-address string
         The address to listen on for HTTP requests. (default ":8080")
+  -max-backoff duration
+        Max backoff period. (default 10s)
+  -period duration
+        Time period in minutes used for chunk object sharding. (default 5m0s)
   -region string
         s3 region.
-  -secret-key string
-        s3 secret key
-  -tick-interval uint
-        Interval between requests in milliseconds. (default 200)
-  -time-to-run uint
-        The amount of time to run the experiment in seconds. (default 5)
+  -shard-factor int
+        shard factor to use (default 1)
+  -with-jitter
+        Toggle to include jitter for period sharding
 ```
 
-Observe related metrics:
+### S3 credentials are set via the following environment variables:
+
+```shell
+S3_ACCESS_KEY
+S3_SECRET_KEY
+```
+
+## Observe Related Metrics
 
 ```shell
 $ curl -sq localhost:8080/metrics | grep s3            
