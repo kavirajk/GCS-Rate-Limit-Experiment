@@ -13,19 +13,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/grafana/dskit/backoff"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to.")
-var period = flag.Int64("period", 60, "Time period in minutes used for chunk object sharding.")
+var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding.")
+var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period.")
 var region = flag.String("region", "", "s3 region.")
 var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
+var shardFactor = flag.Int("shard-factor", 1, "shard factor to use")
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
+
+var metric = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheus.CounterOpts{
+	Namespace: "loki",
+	Name:      "s3_requests_total",
+}, []string{"err", "bucket", "shard"})
 
 func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
 	conf := loki_aws.S3Config{
@@ -43,39 +51,39 @@ func createS3ObjectClient(bucketName string, region string, accessKey string, se
 	return client, nil
 }
 
-func putObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
-	for _, key := range keys {
-		if err := client.PutObject(context.Background(), key, bytes.NewReader([]byte("hi"))); err != nil {
-			return err
-		}
-	}
-	return nil
+type key struct {
+	bucket, shard, fprint uint64
 }
 
-// func deleteObjectBatch(client *loki_aws.S3ObjectClient, keys []string) error {
-// 	for _, key := range keys {
-// 		if err := client.DeleteObject(context.Background(), key); err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return nil
-// }
+func (k key) String() string {
+	// <user>/<period>/<shard>/fprint
+	return fmt.Sprintf("user/%d/%d/%x", k.bucket, k.shard, k.fprint)
 
-func chunkKey(withJitter bool, period time.Duration, shard int) (string, error) {
-	from := uint64(time.Now().UTC().UnixNano())
-	// simiulate a good distribution of active stream fingerprints
-	chance := rand.Intn(10) + 1
-	remainder := from % uint64(period)
-	percent := (float64(remainder) / float64(period)) * 10
-	uuid := uuid.New()
+}
 
-	if !withJitter {
-		return fmt.Sprintf("bat/%x/%x/%s", (from - remainder), shard, uuid), nil
-	} else if float64(chance) <= percent { // put this chunk in the next time period prefix
-		return fmt.Sprintf("bat/%x/%x/%s", (from + (uint64(period) - remainder)), shard, uuid), nil
-	} else {
-		return fmt.Sprintf("bat/%x/%x/%s", (from - remainder), shard, uuid), nil
+func newKey() key {
+	fprint := rand.Uint64()
+	from := time.Now().UnixNano()
+	shard := fprint % uint64(*shardFactor)
+	bucket := uint64(from) / uint64(*period)
+
+	if *withJitter {
+		jitter := fprint % uint64(*period)
+		bucket = (uint64(from) + jitter) / uint64(*period)
 	}
+
+	return key{
+		bucket: bucket,
+		shard:  shard,
+		fprint: fprint,
+	}
+
+}
+
+func putObject(client *loki_aws.S3ObjectClient, key key) error {
+	err := client.PutObject(context.Background(), key.String(), bytes.NewReader([]byte("hi")))
+	metric.WithLabelValues(fmt.Sprint(err != nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
+	return err
 }
 
 func main() {
@@ -95,39 +103,24 @@ func main() {
 			// Retry with exponential backoff per AWS documentation
 			backoffConfig := backoff.Config{
 				MinBackoff: 100 * time.Millisecond,
-				MaxBackoff: 5 * time.Second,
+				MaxBackoff: *maxBackoff,
 				MaxRetries: 10,
 			}
-
-			prefixFactor := 1
 
 			for {
 				select {
 				case <-term:
 					return
 				default:
-					// Without jitter for now
-					key, err := chunkKey(*withJitter, time.Duration((*period))*time.Minute, prefixFactor)
-					if err != nil {
-						fmt.Printf("%+v", err)
-						os.Exit(1)
-					}
-
 					retries := backoff.New(context.Background(), backoffConfig)
+					key := newKey()
 					for retries.Ongoing() {
-						err := putObjectBatch(client, []string{key})
+						err := putObject(client, key)
 						if err != nil {
-							fmt.Printf("%+v", err)
 							retries.Wait()
-						} else if err == nil {
-							break
+							continue
 						}
-					}
-
-					if prefixFactor == 1 {
-						prefixFactor = prefixFactor + 1
-					} else if prefixFactor == 2 {
-						prefixFactor = prefixFactor - 1
+						break
 					}
 				}
 			}

@@ -1,18 +1,21 @@
-# syntax=docker/dockerfile:1
+FROM golang:1.17.2 as build
 
-FROM golang:1.17-alpine
-
-WORKDIR /app
+WORKDIR /src/cmd
 
 COPY go.mod ./
 COPY go.sum ./
 RUN go mod download
+ENV GOARCH="amd64"
+ENV CGO_ENABLED=0
 
 COPY *.go ./
 
-ARG GOARCH="amd64"
 RUN go build -o s3-rate-limit-experiment
 
-EXPOSE 8080
+FROM alpine:3.13
+RUN apk add --no-cache ca-certificates libcap
 
-ENTRYPOINT ["/app/s3-rate-limit-experiment"]
+COPY --from=build /src/cmd/s3-rate-limit-experiment /usr/bin/s3-rate-limit-experiment
+
+EXPOSE 8080
+ENTRYPOINT [ "/usr/bin/s3-rate-limit-experiment" ]

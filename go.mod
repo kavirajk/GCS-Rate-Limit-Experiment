@@ -3,12 +3,14 @@ module github.com/jordanrushing/s3-rate-limit-experiment
 go 1.17
 
 require (
-	github.com/aws/aws-sdk-go v1.41.16
-	github.com/google/uuid v1.3.0
+	github.com/grafana/dskit v0.0.0-20211011144203-3a88ec0b675f
+	github.com/grafana/loki v1.6.2-0.20211103201417-07ea1ed99c4e
+	github.com/prometheus/client_golang v1.11.0
 )
 
 require (
 	github.com/alecthomas/units v0.0.0-20210912230133-d1bdfacee922 // indirect
+	github.com/aws/aws-sdk-go v1.41.16 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
@@ -30,9 +32,8 @@ require (
 	github.com/gogo/status v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/grafana/dskit v0.0.0-20211011144203-3a88ec0b675f // indirect
-	github.com/grafana/loki v1.6.2-0.20211103201417-07ea1ed99c4e // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20201207153454-9f6bf00c00a7 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -54,7 +55,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.31.1 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
