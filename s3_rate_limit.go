@@ -6,13 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/grafana/dskit/backoff"
 	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,10 +23,12 @@ import (
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests")
 var bucketName = flag.String("bucket", "", "s3 bucket to read/write to")
 var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period")
-var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding")
+
+//var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding")
 var region = flag.String("region", "", "S3 region")
-var shardFactor = flag.Int("shard-factor", 1, "Shard factor to use")
-var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
+
+//var shardFactor = flag.Int("shard-factor", 1, "Shard factor to use")
+//var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
 
 var accessKey = os.Getenv("S3_ACCESS_KEY")
 var secretKey = os.Getenv("S3_SECRET_KEY")
@@ -34,34 +36,34 @@ var secretKey = os.Getenv("S3_SECRET_KEY")
 var metric = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheus.CounterOpts{
 	Namespace: "loki",
 	Name:      "s3_requests_total",
-}, []string{"err", "bucket", "shard"})
+}, []string{"err"})
 
-type key struct {
-	bucket, shard, fprint uint64
-}
+// type key struct {
+// 	bucket, shard, fprint uint64
+// }
 
-func (k key) String() string {
-	// <user>/<period>/<shard>/fprint
-	return fmt.Sprintf("user/%d/%d/%x", k.bucket, k.shard, k.fprint)
-}
+// func (k key) String() string {
+// 	// <user>/<period>/<shard>/fprint
+// 	return fmt.Sprintf("user/%d/%d/%x", k.bucket, k.shard, k.fprint)
+// }
 
-func newKey() key {
-	fprint := rand.Uint64()
-	from := time.Now().UnixNano()
-	shard := fprint % uint64(*shardFactor)
-	bucket := uint64(from) / uint64(*period)
+// func newKey() key {
+// 	fprint := rand.Uint64()
+// 	from := time.Now().UnixNano()
+// 	shard := fprint % uint64(*shardFactor)
+// 	bucket := uint64(from) / uint64(*period)
 
-	if *withJitter {
-		jitter := fprint % uint64(*period)
-		bucket = (uint64(from) + jitter) / uint64(*period)
-	}
+// 	if *withJitter {
+// 		jitter := fprint % uint64(*period)
+// 		bucket = (uint64(from) + jitter) / uint64(*period)
+// 	}
 
-	return key{
-		bucket: bucket,
-		shard:  shard,
-		fprint: fprint,
-	}
-}
+// 	return key{
+// 		bucket: bucket,
+// 		shard:  shard,
+// 		fprint: fprint,
+// 	}
+// }
 
 func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
 	conf := loki_aws.S3Config{
@@ -79,9 +81,9 @@ func createS3ObjectClient(bucketName string, region string, accessKey string, se
 	return client, nil
 }
 
-func putObject(client *loki_aws.S3ObjectClient, key key) error {
-	err := client.PutObject(context.Background(), key.String(), bytes.NewReader([]byte("hi")))
-	metric.WithLabelValues(fmt.Sprint(err != nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
+func putObject(client *loki_aws.S3ObjectClient, key string) error {
+	err := client.PutObject(context.Background(), key, bytes.NewReader([]byte("hi")))
+	metric.WithLabelValues(fmt.Sprint(err != nil)).Inc()
 	return err
 }
 
@@ -111,8 +113,10 @@ func main() {
 				case <-term:
 					return
 				default:
+					uuid := uuid.New()
+					key := fmt.Sprintf("woo/%s/%s", uuid, uuid)
+
 					retries := backoff.New(context.Background(), backoffConfig)
-					key := newKey()
 					for retries.Ongoing() {
 						err := putObject(client, key)
 						if err != nil {
