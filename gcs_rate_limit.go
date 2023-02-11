@@ -14,28 +14,27 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
-	loki_aws "github.com/grafana/loki/pkg/storage/chunk/aws"
+	loki_gcs "github.com/grafana/loki/pkg/storage/chunk/client/gcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// SET credentials via `GOOGLE_APPLICATION_CREDENTIALS`
+
 var addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests")
-var bucketName = flag.String("bucket", "", "s3 bucket to read/write to")
+var bucketName = flag.String("bucket", "", "gcs bucket to read/write to")
 var maxBackoff = flag.Duration("max-backoff", 10*time.Second, "Max backoff period")
 var period = flag.Duration("period", 5*time.Minute, "Time period in minutes used for chunk object sharding")
-var region = flag.String("region", "", "S3 region")
 var shardFactor = flag.Int("shard-factor", 1, "Shard factor to use")
 var withJitter = flag.Bool("with-jitter", false, "Toggle to include jitter for period sharding")
 
-var accessKey = os.Getenv("S3_ACCESS_KEY")
-var secretKey = os.Getenv("S3_SECRET_KEY")
-
 var metric = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheus.CounterOpts{
 	Namespace: "loki",
-	Name:      "s3_requests_total",
+	Name:      "gcs_requests_total",
 }, []string{"err", "bucket", "shard"})
 
+// TODO(kavi): Modify Key to compley with GCS.
 type key struct {
 	bucket, shard, fprint uint64
 }
@@ -63,24 +62,22 @@ func newKey() key {
 	}
 }
 
-func createS3ObjectClient(bucketName string, region string, accessKey string, secret string) (*loki_aws.S3ObjectClient, error) {
-	conf := loki_aws.S3Config{
-		BucketNames:     bucketName,
-		Region:          region,
-		AccessKeyID:     accessKey,
-		SecretAccessKey: secret,
-		Insecure:        true,
+func createGCSObjectClient(bucketName string) (*loki_gcs.GCSObjectClient, error) {
+	conf := loki_gcs.GCSConfig{
+		BucketName: bucketName,
+		Insecure:   true,
 	}
 
-	client, err := loki_aws.NewS3ObjectClient(conf)
+	client, err := loki_gcs.NewGCSObjectClient(conf)
 	if err != nil {
 		return nil, fmt.Errorf("error: %v", err)
 	}
 	return client, nil
 }
 
-func putObject(client *loki_aws.S3ObjectClient, key key) error {
+func putObject(client *loki_gcs.GCSObjectClient, key key) error {
 	err := client.PutObject(context.Background(), key.String(), bytes.NewReader([]byte("hi")))
+	// TODO: Metric similar to our prod gcs_storage_*. To get visibility on actual status code to filter out rate_limited vs other errors?
 	metric.WithLabelValues(fmt.Sprint(err != nil), fmt.Sprint(key.bucket), fmt.Sprint(key.shard)).Inc()
 	return err
 }
@@ -88,7 +85,7 @@ func putObject(client *loki_aws.S3ObjectClient, key key) error {
 func main() {
 	flag.Parse()
 
-	client, err := createS3ObjectClient(*bucketName, *region, accessKey, secretKey)
+	client, err := createGCSObjectClient(*bucketName)
 	if err != nil {
 		fmt.Printf("%+v", err)
 		os.Exit(1)
